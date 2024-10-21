@@ -5,6 +5,7 @@ import os
 import random
 import copy
 from player_ai import guess_card
+from narrator_ai import generate_hint
 
 # Inizializza il bot
 intents = discord.Intents.default()
@@ -18,6 +19,7 @@ game_started = False
 cards_per_player = 6
 cards_folder = 'cards'  # Cartella contenente le immagini delle carte
 storyteller_index = 0  # Indice per il narratore corrente
+storyteller = ""
 round_index = -1
 storyteller_card = None  # Carta scelta dal narratore
 hands = {}  # Mani di carte per ogni giocatore
@@ -97,10 +99,6 @@ class VoteButton(discord.ui.Button):
             await calculate_scores(self.parent_view.ctx)  # Chiama il calcolo dei punteggi
 
 
-
-
-
-
 # Funzione per caricare le carte
 def load_cards():
     return [f for f in os.listdir(cards_folder) if os.path.isfile(os.path.join(cards_folder, f))]
@@ -111,14 +109,14 @@ complete_deck = load_cards()
 
 # Funzione per gestire il turno
 async def round(ctx: commands.Context):
-    global round_index, storyteller_index, ai_cards
+    global round_index, storyteller_index, ai_cards, storyteller
     # Selezione del narratore
     # Se è il turno iniziale 
     if round_index == 0:
         storyteller = random.choice(players)  # Seleziona un narratore casuale dalla lista dei giocatori
         storyteller_index = players.index(storyteller)  # Ottieni l'indice del narratore casuale
         if storyteller == "AI":
-            await send_message(ctx, f"La partita ha inizio! **AI** è stato scelto come narratore!\n\nDevi gestirlo!")
+            await send_message(ctx, f"La partita ha inizio! **AI** è stato scelto come narratore!\n\nPronti per l'indizio?")
         else:
             await send_message(ctx, f"La partita ha inizio! **{storyteller.display_name}** è stato scelto come narratore! 🌟\n\nNarratore scegli la carta che vuoi giocare con '/choose'.")
     # Per i turni successivi, ruota tra i giocatori
@@ -129,7 +127,7 @@ async def round(ctx: commands.Context):
             storyteller_index += 1  # Altrimenti passa al giocatore affianco
         storyteller = players[storyteller_index]
         if storyteller == "AI":
-            await send_message(ctx, f"🔄 Inizia un nuovo round! **AI** è il nuovo narratore! 📜\n\nNarratore scegli la carta che vuoi giocare con '/choose'.\n\nDevi gestirlo!")
+            await send_message(ctx, f"🔄 Inizia un nuovo round! **AI** è il nuovo narratore! 📜\n\nPronti per l'indizio?")
         else:
             await send_message(ctx, f"🔄 Inizia un nuovo round! **{storyteller.display_name}** è il nuovo narratore! 📜\n\nNarratore scegli la carta che vuoi giocare con '/choose'.")
 
@@ -142,7 +140,7 @@ async def round(ctx: commands.Context):
 
     # Manda le immagini delle carte a ciascun giocatore in privato
     for player, hand in hands.items():
-        if player == "AI":
+        if player == "AI" and storyteller != "AI":
             ai_cards = hand
             print(f"AI ha ricevuto le seguenti carte: {', '.join(hand)}.")
         else:
@@ -200,7 +198,7 @@ async def describe_and_choose(ctx: commands.Context, numero_carta: int, descript
         storyteller_chose = True
         storyteller_card = hand.pop(numero_carta - 1)  # Rimuove la carta dalla mano
         played_cards.append((ctx.author, storyteller_card))  # Aggiunge la carta giocata
-        if "AI" in players:
+        if "AI" in players and storyteller != "AI":
             ai_hint = description # Invia la descrizione all'AI
         await ctx.interaction.response.send_message(f"{storyteller.display_name} ha scelto e descritto la sua carta: *'{description}'*.\n\nGli altri giocatori ora devono scegliere una carta che si adatta alla descrizione usando '/playcard'")
 
@@ -234,7 +232,7 @@ async def play_card(ctx: commands.Context, numero_carta: int):
     await send_message(ctx, f"{ctx.author.display_name} ha giocato una carta.")
 
     #eseguito quando un giocatore umano chiama il comando /playcard per giocare una carta.
-    if "AI" in players:
+    if "AI" in players and storyteller != "AI":
         carta_scelta = guess_card(ai_hint, ai_cards)
         played_cards.append(("AI", carta_scelta))  # Aggiunge la carta giocata
         played_cards_by_players["AI"] = carta_scelta
@@ -285,9 +283,8 @@ async def show_cards(ctx: commands.Context):
 
 # Funzione per calcolare i punti
 async def calculate_scores(ctx: commands.Context):
-    global storyteller_card, played_cards, votes, points, storyteller_index, deck, round_index, storyteller_chose, ai_cards, ai_hint
-    storyteller = players[storyteller_index]
-    #print("\n Contenuto di votes:", votes)
+    global storyteller_card, played_cards, votes, points, storyteller_index, storyteller, deck, round_index, storyteller_chose, ai_cards, ai_hint
+    #storyteller = players[storyteller_index]
 
     # Trova l'indice della carta del narratore
     storyteller_card_index = next(i for i, (player, card) in enumerate(played_cards, start=1) if player == storyteller)
@@ -343,6 +340,7 @@ async def calculate_scores(ctx: commands.Context):
     deck = copy.deepcopy(complete_deck)
     ai_hint = ""
     ai_cards.clear()
+    storyteller = ""
 
     await round(ctx)
 
@@ -434,7 +432,7 @@ async def start_game(ctx: commands.Context):
 # Comando per terminare forzatamente la partita
 @bot.hybrid_command(name="endgame", description="Termina la partita attuale")
 async def end_game(ctx: commands.Context):
-    global game_started, round_index, storyteller_card, hands, played_cards, played_cards_by_players, storyteller_chose, votes, deck, ai_hint, ai_cards
+    global game_started, round_index, storyteller_card, storyteller, hands, played_cards, played_cards_by_players, storyteller_chose, votes, deck, ai_hint, ai_cards
     player = ctx.author
     if not game_started:
         await send_message(ctx, f"Non c'è nessuna partita da interrompere.")
@@ -451,8 +449,10 @@ async def end_game(ctx: commands.Context):
         deck = copy.deepcopy(complete_deck)
         ai_hint = ""
         ai_cards.clear()
+        storyteller = ""
 
 
 
 # Avvia il bot con il token
 bot.run('TOKEN')
+
