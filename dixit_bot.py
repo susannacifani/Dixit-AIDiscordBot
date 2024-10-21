@@ -87,18 +87,23 @@ class VoteButton(discord.ui.Button):
 
         print("\n played_card_names giocate:", played_card_names)
 
-        # Controlla se tutti (tranne il narratore e semmai l'AI) hanno votato
-        if "AI" not in players and len(self.parent_view.voted_users) == len(players) - 1:
-            await self.parent_view.ctx.send("Tutti hanno votato! Calcoliamo i punteggi...")
-            await calculate_scores(self.parent_view.ctx)  # Chiama il calcolo dei punteggi
-        elif "AI" in players and len(self.parent_view.voted_users) == len(players) - 2:
+        if "AI" in players and storyteller != "AI": #se l'AI deve giocare
             card_ai = played_cards_by_players['AI'] # Carta giocata dall'AI
-            played_cards_less_ai = [card for card in played_cards_by_players if card != card_ai] # La rimuovo dalla lista di carte tra cui può scegliere
+            print("card_ai:", card_ai)
+            played_cards_less_ai = [card for card in played_card_names if card != card_ai] # La rimuovo dalla lista di carte tra cui può scegliere
+            print("played_cards_less_ai:", played_cards_less_ai)
             carta_scelta = guess_card(ai_hint, played_cards_less_ai)
             button_index = played_card_names.index(carta_scelta)
+            self.parent_view.voted_users.add(123456)  # Aggiungi l'AI alla lista di chi ha votato
             votes[button_index+1] += 1
+            #await self.parent_view.ctx.send("Tutti hanno votato! Calcoliamo i punteggi...")
+            #await calculate_scores(self.parent_view.ctx)  # Chiama il calcolo dei punteggi
+
+        # Controlla se tutti i giocatori hanno votato
+        if len(self.parent_view.voted_users) == len(players) - 1:  # Escludi il narratore
             await self.parent_view.ctx.send("Tutti hanno votato! Calcoliamo i punteggi...")
             await calculate_scores(self.parent_view.ctx)  # Chiama il calcolo dei punteggi
+
 
 
 # Funzione per caricare le carte
@@ -107,6 +112,17 @@ def load_cards():
 
 deck = load_cards()
 complete_deck = load_cards()
+
+async def narrator_ai(ctx: commands.Context):
+    global ai_cards, storyteller_chose, storyteller_card, played_cards
+    # L'AI seleziona la carta
+    #print("AI cards:", ai_cards)
+    description, storyteller_card = generate_hint(ai_cards)
+    #print("Descrizione:", description)
+    #print("Carta:", storyteller_card)
+    storyteller_chose = True
+    played_cards.append(("AI", storyteller_card))  # Aggiunge la carta giocata
+    await send_message(ctx, f"AI ha scelto e descritto la sua carta: *'{description}'*.\n\nGli altri giocatori ora devono scegliere una carta che si adatta alla descrizione usando '/playcard'")
 
 
 # Funzione per gestire il turno
@@ -144,6 +160,8 @@ async def round(ctx: commands.Context):
     for player, hand in hands.items():
         if player == "AI":
             ai_cards = hand
+            if storyteller == "AI":
+                await narrator_ai(ctx)
             print(f"AI ha ricevuto le seguenti carte: {', '.join(hand)}.")
         else:
             await player.send(f"Questo è il turno {round_index + 1}. Preparati! 🚀")
@@ -173,14 +191,7 @@ async def describe_and_choose(ctx: commands.Context, numero_carta: int, descript
     global storyteller_index, storyteller_card, hands, storyteller_chose, ai_hint
     storyteller = players[storyteller_index]
 
-    #devi gestirlo: NARRATORE AI
-    if storyteller == "AI":
-        # Selezione della carta
-        storyteller_chose = True
-        storyteller_card = hand.pop(numero_carta - 1)  # Rimuove la carta dalla mano
-        played_cards.append((ctx.author, storyteller_card))  # Aggiunge la carta giocata
-        await ctx.interaction.response.send_message(f"{storyteller.display_name} ha scelto e descritto la sua carta: *'{description}'*.\n\nGli altri giocatori ora devono scegliere una carta che si adatta alla descrizione usando '/playcard'")
-    else:
+    if storyteller != "AI":
         # Controllo se l'autore del comando è il narratore
         if ctx.author.id != storyteller.id:
             await send_message(ctx, "Solo il narratore può scegliere e descrivere la carta in questa fase.")
@@ -285,7 +296,7 @@ async def show_cards(ctx: commands.Context):
 
 # Funzione per calcolare i punti
 async def calculate_scores(ctx: commands.Context):
-    global storyteller_card, played_cards, votes, points, storyteller_index, storyteller, deck, round_index, storyteller_chose, ai_cards, ai_hint
+    global storyteller_card, game_started, played_cards, votes, points, storyteller_index, storyteller, deck, round_index, storyteller_chose, ai_cards, ai_hint
     #storyteller = players[storyteller_index]
 
     # Trova l'indice della carta del narratore
@@ -317,6 +328,17 @@ async def calculate_scores(ctx: commands.Context):
         if score >= 4:  # Cambia a 30 per il gioco completo
             await send_message(ctx, f"{player.display_name} ha raggiunto 30 punti e vince la partita!")
             game_started = False
+            round_index = -1
+            storyteller_card = None
+            hands.clear()
+            played_cards.clear()
+            played_cards_by_players.clear()
+            storyteller_chose = False
+            votes.clear()
+            deck = copy.deepcopy(complete_deck)
+            ai_hint = ""
+            ai_cards.clear()
+            storyteller = ""
             return  # Termina il gioco
     # Verifica se il mazzo è esaurito
     if len(deck) < cards_per_player * len(players):
@@ -329,6 +351,17 @@ async def calculate_scores(ctx: commands.Context):
         else:
             await send_message(ctx, f"La partita è finita! Il vincitore è {winners[0]} con {highest_score} punti!")
         game_started = False
+        round_index = -1
+        storyteller_card = None
+        hands.clear()
+        played_cards.clear()
+        played_cards_by_players.clear()
+        storyteller_chose = False
+        votes.clear()
+        deck = copy.deepcopy(complete_deck)
+        ai_hint = ""
+        ai_cards.clear()
+        storyteller = ""
         return  # Termina il gioco
 
     # Se la partita non è finita, inizia un nuovo round: ripristina il gioco per il turno successivo
@@ -339,7 +372,7 @@ async def calculate_scores(ctx: commands.Context):
     played_cards_by_players.clear()
     storyteller_chose = False
     votes.clear()
-    deck = copy.deepcopy(complete_deck)
+    #deck = copy.deepcopy(complete_deck) il deck si deve svuotare nei vari round
     ai_hint = ""
     ai_cards.clear()
     storyteller = ""
