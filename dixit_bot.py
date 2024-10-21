@@ -92,7 +92,9 @@ class VoteButton(discord.ui.Button):
             await self.parent_view.ctx.send("Tutti hanno votato! Calcoliamo i punteggi...")
             await calculate_scores(self.parent_view.ctx)  # Chiama il calcolo dei punteggi
         elif "AI" in players and len(self.parent_view.voted_users) == len(players) - 2:
-            carta_scelta = guess_card(ai_hint, played_card_names)
+            card_ai = played_cards_by_players['AI'] # Carta giocata dall'AI
+            played_cards_less_ai = [card for card in played_cards_by_players if card != card_ai] # La rimuovo dalla lista di carte tra cui può scegliere
+            carta_scelta = guess_card(ai_hint, played_cards_less_ai)
             button_index = played_card_names.index(carta_scelta)
             votes[button_index+1] += 1
             await self.parent_view.ctx.send("Tutti hanno votato! Calcoliamo i punteggi...")
@@ -140,7 +142,7 @@ async def round(ctx: commands.Context):
 
     # Manda le immagini delle carte a ciascun giocatore in privato
     for player, hand in hands.items():
-        if player == "AI" and storyteller != "AI":
+        if player == "AI":
             ai_cards = hand
             print(f"AI ha ricevuto le seguenti carte: {', '.join(hand)}.")
         else:
@@ -239,7 +241,7 @@ async def play_card(ctx: commands.Context, numero_carta: int):
         await send_message(ctx, f"AI ha giocato una carta.")
 
 
-    print("\n giocate:", played_cards)
+    print("\n giocate:", played_cards_by_players)
     # Controllo se tutti i giocatori (escluso il narratore) hanno giocato una carta
     if len(played_cards) == len(players):
         await show_cards(ctx)
