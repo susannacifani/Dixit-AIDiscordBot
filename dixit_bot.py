@@ -5,7 +5,7 @@ import os
 import random
 import copy
 from player_ai import guess_card
-from narrator_ai import generate_hint
+from storyteller_ai import generate_hint
 
 intents = discord.Intents.default()
 intents.message_content = True  # Allows the bot to read message content
