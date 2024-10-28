@@ -7,106 +7,100 @@ import copy
 from player_ai import guess_card
 from narrator_ai import generate_hint
 
-# Inizializza il bot
 intents = discord.Intents.default()
-intents.message_content = True  # Permette al bot di leggere i contenuti dei messaggi
+intents.message_content = True  # Allows the bot to read message content
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Variabili globali per il gioco
+# Global variables for the game
 players = []
 game_started = False
 cards_per_player = 6
-cards_folder = 'cards'  # Cartella contenente le immagini delle carte
-storyteller_index = 0  # Indice per il narratore corrente
+cards_folder = 'cards'  # Folder containing the card images
+storyteller_index = 0  # Index for the current storyteller
 storyteller = ""
 round_index = -1
-storyteller_card = None  # Carta scelta dal narratore
-hands = {}  # Mani di carte per ogni giocatore
-played_cards = []  # Lista delle carte giocate da tutti i giocatori
+storyteller_card = None  # Card chosen by the storyteller
+hands = {}  # Card hands for each player
+played_cards = []  # List of cards played by all players
 played_card_names = []
-played_cards_by_players = {}  # Lista delle carte giocate e associate ai giocatori (tranne il narratore)
+played_cards_by_players = {}  # List of cards played and associated with players (excluding the storyteller)
 storyteller_chose = False
-votes = {}  # Dizionario che memorizza i voti
-points = {}  # Punteggi per i giocatori
+votes = {}  # Dictionary storing the votes
+points = {}  # Points for the players
 ai_hint = ""
 ai_cards = []
 
-# Modifica la classe DynamicVoteButton per gestire i voti
 class DynamicVoteButton(discord.ui.View):
     def __init__(self, ctx, num_buttons, storyteller, card_list):
         super().__init__(timeout=None)
         self.ctx = ctx
         self.result = None
-        self.voted_users = set()  # Set per tracciare chi ha votato
-        self.storyteller = storyteller  # Aggiungi il narratore come attributo
+        self.voted_users = set()  # Set to track who has voted
+        self.storyteller = storyteller  # Add the storyteller as an attribute
         self.card_list = card_list
         global votes
-        votes = {i: 0 for i in range(1, num_buttons + 1)}  # Inizializza i voti per la votazione
+        votes = {i: 0 for i in range(1, num_buttons + 1)}  # Initialize the votes
         self.create_buttons(num_buttons)
 
-    # Funzione per creare i bottoni dinamicamente
+    # Function to create buttons dynamically
     def create_buttons(self, num_buttons):
         for i in range(1, num_buttons + 1):
             self.add_item(VoteButton(label=str(i), button_id=i, parent_view=self, card_list=self.card_list))
 
-# Modifica la classe VoteButton
 class VoteButton(discord.ui.Button):
     def __init__(self, label, button_id, parent_view, card_list):
         super().__init__(label=label, style=discord.ButtonStyle.primary, custom_id=str(button_id))
-        self.button_id = button_id # num bottone (es 1, 2, ...)
+        self.button_id = button_id # button number (ex 1, 2, ...)
         self.parent_view = parent_view
         global played_cards_by_players, players, played_card_names
         self.card_list = card_list
 
     async def callback(self, interaction: discord.Interaction):
-        # Controlla se l'utente è il narratore
-        if interaction.user == self.parent_view.storyteller:  # Verifica se l'utente è il narratore
-            await interaction.response.send_message("Il narratore non può votare!", ephemeral=True)
+        # Check if the user is the storyteller
+        if interaction.user == self.parent_view.storyteller:  # Check if the user is the storyteller
+            await interaction.response.send_message("The storyteller can't vote!", ephemeral=True)
             return
         
-        # Controlla se l'utente ha già votato
+        # Check if the user has already voted
         if interaction.user.id in self.parent_view.voted_users:
-            await interaction.response.send_message("Hai già votato!", ephemeral=True)
+            await interaction.response.send_message("You already voted!", ephemeral=True)
             return
-        
-        #print("\n played_cards_by_players: ", played_cards_by_players)
 
-        # Controlla se l'utente sta cercando di votare la propria carta
-        user_card = played_cards_by_players.get(interaction.user)  # Ottieni la carta giocata dall'utente
+        # Check if the user is trying to vote for their own card
+        user_card = played_cards_by_players.get(interaction.user)  # Get the card played by the user
         voted_card = self.card_list[self.button_id-1]
 
         if user_card == voted_card:
-            await interaction.response.send_message("Non puoi votare la tua stessa carta!", ephemeral=True)
+            await interaction.response.send_message("You can't vote for your own card!", ephemeral=True)
             return
 
-        # Gestisci il voto dell'utente
-        self.parent_view.voted_users.add(interaction.user.id)  # Aggiungi l'utente alla lista di chi ha votato
-        votes[self.button_id] += 1  # Incrementa il voto per la carta scelta
-        await interaction.response.send_message(f"Hai votato per la carta {self.button_id}!", ephemeral=True)
+        # Handle the user's vote
+        self.parent_view.voted_users.add(interaction.user.id)  # Add the user to the list of voters
+        votes[self.button_id] += 1  # Increment the vote for the chosen card
+        await interaction.response.send_message(f"You voted for card {self.button_id}!", ephemeral=True)
 
-        print("\n played_card_names giocate:", played_card_names)
-
-        if "AI" in players and storyteller != "AI": #se l'AI deve giocare
+        if "AI" in players and storyteller != "AI": # If AI needs to play
+            played_cards_less_ai = []
+            print("played_cards_less_ai:", played_cards_less_ai)
+            print("played_card_names:", played_card_names)
             card_ai = played_cards_by_players['AI'] # Carta giocata dall'AI
             print("card_ai:", card_ai)
-            played_cards_less_ai = [card for card in played_card_names if card != card_ai] # La rimuovo dalla lista di carte tra cui può scegliere
+            played_cards_less_ai = [card for card in played_card_names if card != card_ai] # Remove from the voting options
             print("played_cards_less_ai:", played_cards_less_ai)
             carta_scelta = guess_card(ai_hint, played_cards_less_ai)
             button_index = played_card_names.index(carta_scelta)
-            self.parent_view.voted_users.add(123456)  # Aggiungi l'AI alla lista di chi ha votato
+            self.parent_view.voted_users.add(123456)  # Add AI to the list of voters
             votes[button_index+1] += 1
-            #await self.parent_view.ctx.send("Tutti hanno votato! Calcoliamo i punteggi...")
-            #await calculate_scores(self.parent_view.ctx)  # Chiama il calcolo dei punteggi
 
-        # Controlla se tutti i giocatori hanno votato
-        if len(self.parent_view.voted_users) == len(players) - 1:  # Escludi il narratore
-            await self.parent_view.ctx.send("Tutti hanno votato! Calcoliamo i punteggi...")
-            await calculate_scores(self.parent_view.ctx)  # Chiama il calcolo dei punteggi
+        # Check if all players voted
+        if len(self.parent_view.voted_users) == len(players) - 1:  # Exclude the storyteller
+            await self.parent_view.ctx.send("Everyone voted! Let's calculate the scores...")
+            await calculate_scores(self.parent_view.ctx)  # Call score calculation
 
 
 
-# Funzione per caricare le carte
+# Function to load the cards
 def load_cards():
     return [f for f in os.listdir(cards_folder) if os.path.isfile(os.path.join(cards_folder, f))]
 
@@ -115,223 +109,205 @@ complete_deck = load_cards()
 
 async def narrator_ai(ctx: commands.Context):
     global ai_cards, storyteller_chose, storyteller_card, played_cards
-    # L'AI seleziona la carta
-    #print("AI cards:", ai_cards)
     description, storyteller_card = generate_hint(ai_cards)
-    #print("Descrizione:", description)
-    #print("Carta:", storyteller_card)
     storyteller_chose = True
-    played_cards.append(("AI", storyteller_card))  # Aggiunge la carta giocata
-    await send_message(ctx, f"AI ha scelto e descritto la sua carta: *'{description}'*.\n\nGli altri giocatori ora devono scegliere una carta che si adatta alla descrizione usando '/playcard'")
+    played_cards.append(("AI", storyteller_card)) 
+    await send_message(ctx, f"Turbo has chosen and given a hint about their card: *'{description}'*.\n\nThe other players should now select a card that matches the description using '/playcard'")
 
 
-# Funzione per gestire il turno
+# Function to handle each round
 async def round(ctx: commands.Context):
     global round_index, storyteller_index, ai_cards, storyteller
-    # Selezione del narratore
-    # Se è il turno iniziale 
+    # Select the storyteller
     if round_index == 0:
-        storyteller = random.choice(players)  # Seleziona un narratore casuale dalla lista dei giocatori
-        storyteller_index = players.index(storyteller)  # Ottieni l'indice del narratore casuale
+        storyteller = random.choice(players)  # Randomly select a storyteller
+        storyteller_index = players.index(storyteller)  # Get the index of the storyteller
         if storyteller == "AI":
-            await send_message(ctx, f"La partita ha inizio! **AI** è stato scelto come narratore!\n\nPronti per l'indizio?")
+            await send_message(ctx, f"The game has started! **Turbo** has been chosen as the storyteller!\n\nReady for the hint?")
         else:
-            await send_message(ctx, f"La partita ha inizio! **{storyteller.display_name}** è stato scelto come narratore! 🌟\n\nNarratore scegli la carta che vuoi giocare con '/choose'.")
-    # Per i turni successivi, ruota tra i giocatori
+            await send_message(ctx, f"The game has started! **{storyteller.display_name}** is the storyteller! 🌟\n\nStoryteller, choose your card using '/choose'.")
     else:
-        if storyteller_index == len(players)-1:  # Se siamo alla fine della lista di giocatori, ricomincia daccapo
+        if storyteller_index == len(players)-1:  # Loop back to the start if at the end of the list
             storyteller_index = 0
         else:
-            storyteller_index += 1  # Altrimenti passa al giocatore affianco
+            storyteller_index += 1  
         storyteller = players[storyteller_index]
         if storyteller == "AI":
-            await send_message(ctx, f"🔄 Inizia un nuovo round! **AI** è il nuovo narratore! 📜\n\nPronti per l'indizio?")
+            await send_message(ctx, f"🔄 A new round has started! **Turbo** is the new storyteller! 📜\n\nReady for the hint?")
         else:
-            await send_message(ctx, f"🔄 Inizia un nuovo round! **{storyteller.display_name}** è il nuovo narratore! 📜\n\nNarratore scegli la carta che vuoi giocare con '/choose'.")
+            await send_message(ctx, f"🔄 A new round has started! **{storyteller.display_name}** is the new storyteller! 📜\n\nStoryteller, choose your card using '/choose'.")
 
-    # Distribuzione carte uniche ai giocatori
+    # Deal unique cards to each player
     for player in players:
-        hand = random.sample(deck, cards_per_player)  # Rimozione carte dal mazzo man mano che vengono distribuite
+        hand = random.sample(deck, cards_per_player)  # Remove cards from the deck
         hands[player] = hand
         for card in hand:
             deck.remove(card)
 
-    # Manda le immagini delle carte a ciascun giocatore in privato
+    # Send card images to each player privately
     for player, hand in hands.items():
         if player == "AI":
             ai_cards = hand
             if storyteller == "AI":
                 await narrator_ai(ctx)
-            print(f"AI ha ricevuto le seguenti carte: {', '.join(hand)}.")
+            print(f"Turbo received the following cards:: {', '.join(hand)}.")
         else:
-            await player.send(f"Questo è il turno {round_index + 1}. Preparati! 🚀")
+            await player.send(f"This is round {round_index + 1}. Get ready! 🚀")
             for card_image in hand:
                 file_path = os.path.join(cards_folder, card_image)
                 await player.send(file=discord.File(file_path))
-            print(f"Turno {round_index + 1}.")
-            print(f"{player.display_name} ha ricevuto le seguenti carte: {', '.join(hand)}.")
+            print(f"Round {round_index + 1}.")
+            print(f"{player.display_name} received the following cards: {', '.join(hand)}.")
 
 
-# Funzione per inviare messaggi sia per i comandi con prefisso che Slash Command
+# Function to send messages for both prefix and Slash commands
 async def send_message(ctx, message):
-    # Se è un comando Slash (interazione), usa followup per eventuali risposte aggiuntive
     if ctx.interaction:
         if not ctx.interaction.response.is_done():
             await ctx.interaction.response.send_message(message)
         else:
             await ctx.interaction.followup.send(message)
     else:
-        # Se è un comando con prefisso (!comando), usa ctx.send()
         await ctx.send(message)
 
 
-
-@bot.hybrid_command(name="choose", description="Scegli il numero della carta e descrivila.")
-async def describe_and_choose(ctx: commands.Context, numero_carta: int, description: str):
+@bot.hybrid_command(name="choose", description="Choose the number of the card and give a hint about it.")
+async def describe_and_choose(ctx: commands.Context, card_number: int, description: str):
     global storyteller_index, storyteller_card, hands, storyteller_chose, ai_hint
     storyteller = players[storyteller_index]
 
     if storyteller != "AI":
-        # Controllo se l'autore del comando è il narratore
+        # Check if the command author is the storyteller
         if ctx.author.id != storyteller.id:
-            await send_message(ctx, "Solo il narratore può scegliere e descrivere la carta in questa fase.")
+            await send_message(ctx, "Only the storyteller can choose and describe the card at this stage.")
             return
         
         if storyteller_chose:
-            await send_message(ctx, "Il narratore ha già scelto e descritto la carta.")
+            await send_message(ctx, "The storyteller has already chosen the card.")
             return
 
-        # Verifica che il numero della carta sia valido
+        # Check card number
         hand = hands[storyteller]
-        if numero_carta < 1 or numero_carta > len(hand):
-            await send_message(ctx, "Numero di carta non valido. Scegli un numero valido dalla tua mano.")
+        if card_number < 1 or card_number > len(hand):
+            await send_message(ctx, "Invalid card number. Please choose a valid number from your hand.")
             return
 
-        # Selezione della carta
+        # Storyteller selects the card
         storyteller_chose = True
-        storyteller_card = hand.pop(numero_carta - 1)  # Rimuove la carta dalla mano
-        played_cards.append((ctx.author, storyteller_card))  # Aggiunge la carta giocata
+        storyteller_card = hand.pop(card_number - 1)  # Remove the card from the hand
+        played_cards.append((ctx.author, storyteller_card))  # Add the card to the played cards
         if "AI" in players and storyteller != "AI":
-            ai_hint = description # Invia la descrizione all'AI
-        await ctx.interaction.response.send_message(f"{storyteller.display_name} ha scelto e descritto la sua carta: *'{description}'*.\n\nGli altri giocatori ora devono scegliere una carta che si adatta alla descrizione usando '/playcard'")
+            ai_hint = description # Send the description to the AI
+        await ctx.interaction.response.send_message(f"{storyteller.display_name} has chosen and given a hint about their card: *'{description}'*.\n\nThe other players should now select a card that matches the description using '/playcard'")
 
 
-
-# Comando per i giocatori per scegliere una carta
-@bot.hybrid_command(name="playcard", description="Gioca una carta")
-async def play_card(ctx: commands.Context, numero_carta: int):
+# Command for players to choose a card
+@bot.hybrid_command(name="playcard", description="Play a card")
+async def play_card(ctx: commands.Context, card_number: int):
     global storyteller_index, hands, played_cards, played_cards_by_players
     storyteller = players[storyteller_index]
 
-    # Controllo se l'autore del comando è il narratore
+    # Check if the command author is the storyteller
     if ctx.author == storyteller:
-        await send_message(ctx, "Il narratore non può giocare una carta in questa fase.")
+        await send_message(ctx, "The storyteller cannot play a card at this stage.")
         return
     
     if not storyteller_chose:
-        await send_message(ctx, "Il narratore non ha ancora descritto e/o scelto la carta da giocare.")
+        await send_message(ctx, "The storyteller has not yet chosen the card to play.")
         return
 
-    # Verifica che il numero della carta sia valido
+    # Check the card number
     hand = hands[ctx.author]
-    if numero_carta < 1 or numero_carta > len(hand):
-        await send_message(ctx, "Numero di carta non valido. Scegli un numero valido dalla tua mano.")
+    if card_number < 1 or card_number > len(hand):
+        await send_message(ctx, "Invalid card number. Please choose a valid number from your hand.")
         return
 
-    # Selezione della carta da parte del giocatore
-    carta_scelta = hand.pop(numero_carta - 1)  # Rimuove la carta dalla mano del giocatore
-    played_cards.append((ctx.author, carta_scelta))  # Aggiunge la carta giocata
+    # Player selects their card
+    carta_scelta = hand.pop(card_number - 1)  # Add the card to the played cards
+    played_cards.append((ctx.author, carta_scelta))  # Add the card to the played cards
     played_cards_by_players[ctx.author] = carta_scelta
-    await send_message(ctx, f"{ctx.author.display_name} ha giocato una carta.")
-
-    #eseguito quando un giocatore umano chiama il comando /playcard per giocare una carta.
+    await send_message(ctx, f"{ctx.author.display_name} played a card.")
+    # Handle AI's turn if needed
     if "AI" in players and storyteller != "AI":
         carta_scelta = guess_card(ai_hint, ai_cards)
-        played_cards.append(("AI", carta_scelta))  # Aggiunge la carta giocata
+        played_cards.append(("AI", carta_scelta))  # Add the AI's card
         played_cards_by_players["AI"] = carta_scelta
-        await send_message(ctx, f"AI ha giocato una carta.")
+        await send_message(ctx, f"Turbo played a card.")
 
-
-    print("\n giocate:", played_cards_by_players)
-    # Controllo se tutti i giocatori (escluso il narratore) hanno giocato una carta
+    # Check if all players (excluding the storyteller) have played a card
     if len(played_cards) == len(players):
         await show_cards(ctx)
 
 
-# Funzione per mostrare le carte mescolate
+# Function to show the mixed cards
 async def show_cards(ctx: commands.Context):
     global played_cards, players, played_card_names
-    # Mescola le carte
     random.shuffle(played_cards)
 
-    # Prepara una lista di file delle immagini delle carte e testo da inviare in un solo messaggio
-    carte_da_mostrare = []
-    #played_card_names = []
-    messaggio_carte = "Ecco le carte:\n"
+    # Prepare a list of files for the card images to be sent in one message
+    cards_to_show = []
+    message_cards = "Here are the cards:\n"
 
-    # Prepara il messaggio contenente i numeri delle carte
+    # Prepare the message containing the numbers for the cards
     for i, (player, card) in enumerate(played_cards, start=1):
         file_path = os.path.join(cards_folder, card)
-        carte_da_mostrare.append(discord.File(file_path))  # Aggiungi il file della carta alla lista
+        cards_to_show.append(discord.File(file_path))  # Add the card file to the list
         played_card_names.append(card)
 
-    # Invia tutte le carte in un solo messaggio
-    await ctx.send(messaggio_carte, files=carte_da_mostrare)
+    # Send all the cards in one message
+    await ctx.send(message_cards, files=cards_to_show)
 
-    # Crea i bottoni dinamicamente in base al numero di carte
+    # Create buttons dynamically based on the number of cards
     num_buttons = len(played_cards)
     storyteller = players[storyteller_index]
-    print("\n played_card_names giocate:", played_card_names)
     view = DynamicVoteButton(ctx, num_buttons, storyteller, played_card_names)
 
-    # # Invia i bottoni solo ai giocatori umani
-    # for player in players:
-    #     if player != "AI":  # Escludi l'AI dall'invio dei bottoni
-    await ctx.send("Scegli la carta che pensi sia quella del narratore cliccando su un bottone:", view=view)
+    # Send the voting buttons to the human players
+    await ctx.send("Select the card you think is the storyteller's by clicking a button:", view=view)
 
-    # Aggiungi la logica per gestire i voti al termine della votazione
-    await view.wait()  # Aspetta che i voti siano stati espressi
-    #await calculate_scores(ctx)
+    # Wait for votes to be collected
+    await view.wait()
 
 
-# Funzione per calcolare i punti
+# Function to calculate the scores
 async def calculate_scores(ctx: commands.Context):
-    global storyteller_card, game_started, played_cards, votes, points, storyteller_index, storyteller, deck, round_index, storyteller_chose, ai_cards, ai_hint
-    #storyteller = players[storyteller_index]
+    global storyteller_card, game_started, played_cards, played_card_names, votes, points, storyteller_index, storyteller, deck, round_index, storyteller_chose, ai_cards, ai_hint
 
-    # Trova l'indice della carta del narratore
+    # Find the index of the storyteller's card
     storyteller_card_index = next(i for i, (player, card) in enumerate(played_cards, start=1) if player == storyteller)
 
-    #print("\n storyteller_card_index:", storyteller_card_index)
-
-    # Controlla se tutti o nessuno ha votato la carta del narratore
+    # Check if all or none voted for the storyteller's card
     if votes[storyteller_card_index] == 0 or votes[storyteller_card_index] == len(players) - 1:
-        # Nessuno o tutti hanno votato la carta del narratore
+        # No one or everyone voted for the storyteller's card
         for player in players:
             if player != storyteller:
-                points[player] = points.get(player, 0) + 2  # Ogni altro giocatore guadagna 2 punti
-        await send_message(ctx, "Nessuno o tutti hanno votato la carta del narratore. Il narratore ottiene 0 punti, gli altri giocatori guadagnano 2 punti ciascuno.")
+                points[player] = points.get(player, 0) + 2  # Each other player gains 2 points
+        await send_message(ctx, "No one or everyone voted for the storyteller's card. The storyteller scores 0 points, while all other players score 2 points each.")
     else:
-        # Alcuni hanno votato correttamente
-        points[storyteller] = points.get(storyteller, 0) + 3  # Il narratore guadagna 3 punti
+        # Some players voted correctly
+        points[storyteller] = points.get(storyteller, 0) + 3  # The storyteller scores 3 points
         for player, card in played_cards:
             if player != storyteller and votes[played_cards.index((player, card)) + 1] > 0:
-                points[player] = points.get(player, 0) + 1  # Giocatori che ricevono voti guadagnano 1 punto per voto
-        await send_message(ctx, "Il narratore e chi ha votato correttamente guadagnano 3 punti.")
+                points[player] = points.get(player, 0) + 1  # Players who receive votes gain 1 point per vote
+        await send_message(ctx, "The storyteller and those who voted correctly gain 3 points.")
 
-    # Mostra i punteggi finali
+    # Display the final scores
     await display_scores(ctx)
 
-    # Check fine partita
-    # Verifica se qualcuno ha raggiunto i 30 punti
+    # Check for end of game conditions
+    # Verify if any player has reached the target score
     for player, score in points.items():
-        if score >= 4:  # Cambia a 30 per il gioco completo
-            await send_message(ctx, f"{player.display_name} ha raggiunto 30 punti e vince la partita!")
+        if score >= 30:  
+            if player == "AI":
+                await send_message(ctx, "Turbo has reached 30 points and wins the game!")
+            else:
+                await send_message(ctx, f"{player.display_name} has reached 30 points and wins the game!")
             game_started = False
             round_index = -1
             storyteller_card = None
             hands.clear()
             played_cards.clear()
+            played_card_names.clear()
             played_cards_by_players.clear()
             storyteller_chose = False
             votes.clear()
@@ -339,22 +315,24 @@ async def calculate_scores(ctx: commands.Context):
             ai_hint = ""
             ai_cards.clear()
             storyteller = ""
-            return  # Termina il gioco
-    # Verifica se il mazzo è esaurito
+            return  # end the game
+    # Check if the deck is out of cards.
     if len(deck) < cards_per_player * len(players):
-        await send_message(ctx, "Il mazzo è esaurito. La partita finisce qui!")
-        # Trova il giocatore con più punti
+        await send_message(ctx, "The deck is out of cards. The game ends here!")
+        # Determine the winner(s)
         highest_score = max(points.values())
-        winners = [player.display_name for player, score in points.items() if score == highest_score]
+        winners = ["Turbo" if player == "AI" else player.display_name for player, score in points.items() if score == highest_score]
+        #winners = [player.display_name for player, score in points.items() if score == highest_score]
         if len(winners) > 1:
-            await send_message(ctx, f"La partita è finita! I vincitori sono: {', '.join(winners)} con {highest_score} punti!")
+            await send_message(ctx, f"The game is over! The winners are: {', '.join(winners)} with {highest_score} points!")
         else:
-            await send_message(ctx, f"La partita è finita! Il vincitore è {winners[0]} con {highest_score} punti!")
+            await send_message(ctx, f"The game is over! The winner is {winners[0]} with {highest_score} points!")
         game_started = False
         round_index = -1
         storyteller_card = None
         hands.clear()
         played_cards.clear()
+        played_card_names.clear()
         played_cards_by_players.clear()
         storyteller_chose = False
         votes.clear()
@@ -362,17 +340,17 @@ async def calculate_scores(ctx: commands.Context):
         ai_hint = ""
         ai_cards.clear()
         storyteller = ""
-        return  # Termina il gioco
+        return  # End the game
 
-    # Se la partita non è finita, inizia un nuovo round: ripristina il gioco per il turno successivo
+    # If the game is not ended, starts a new round: resets the game for the next turn
     round_index += 1
     storyteller_card = None
     hands.clear()
     played_cards.clear()
     played_cards_by_players.clear()
+    played_card_names.clear()
     storyteller_chose = False
     votes.clear()
-    #deck = copy.deepcopy(complete_deck) il deck si deve svuotare nei vari round
     ai_hint = ""
     ai_cards.clear()
     storyteller = ""
@@ -380,99 +358,95 @@ async def calculate_scores(ctx: commands.Context):
     await round(ctx)
 
 
-# Funzione per mostrare i punteggi
+# Function to display the scores
 async def display_scores(ctx: commands.Context):
     global points
     punteggi = "```md\n"
-    punteggi += "| Giocatore         | Punti |\n"
+    punteggi += "| Player         | Points |\n"
     punteggi += "|-------------------|-------|\n"
     for player in players:
         if player == "AI":
-            punteggi += f"| {'AI':<17} | {points.get(player, 0):<5} |\n"
+            punteggi += f"| {'Turbo':<17} | {points.get(player, 0):<5} |\n"
         else:
             punteggi += f"| {player.display_name:<17} | {points.get(player, 0):<5} |\n"
     punteggi += "```"
-    await send_message(ctx, f"Punteggi attuali:\n{punteggi}")
+    await send_message(ctx, f"Current scores:\n{punteggi}")
 
 
-# Evento: quando il bot è pronto
+# Event: When the bot is ready
 @bot.event
 async def on_ready():
-    print(f'Bot connesso come {bot.user}')
+    print(f'Bot connected as {bot.user}')
     await bot.tree.sync()
 
-# Setup di gioco
-# Comando per iniziare il gioco: risposta a "!dixit" o "/dixit"
-@bot.hybrid_command(name="dixit", description="Inizia una nuova partita di Dixit")
+# Command to strat the game
+@bot.hybrid_command(name="dixit", description="Start a new game of Dixit")
 async def dixit_game(ctx: commands.Context):
     global players, game_started, round_index
     if game_started:
-        await send_message(ctx, "C'è già una partita in corso!")
+        await send_message(ctx, "A game is already in progress!")
     else:
         players = []
         game_started = True
         storyteller_index = 0
-        await send_message(ctx, "\nPartita di Dixit iniziata! 🎲 \n\nUsa i seguenti comandi:\n- `/join`: Unisciti al gioco\n- `/start`: Inizia la partita\n- `/playcard`: Gioca la tua carta (giocatore)\n- `/describe_and_choose`: Gioca la tua carta (narratore)\n- `/endgame`: Interrompi la partita\n\nBuon divertimento! 🌟")
+        await send_message(ctx, "\nDixit game started! 🎲\n\nUse the following commands:\n- `/ai`: Add Turbo AI to the game\n- `/join`: Join the game\n- `/start`: Start the game\n- `/playcard`: Play your card (player)\n- `/describe_and_choose`: Describe and choose a card (storyteller)\n- `/endgame`: End the game\n\nHave fun! 🌟")
         
-
-# Comando per unirsi alla partita: risposta a "!join" o "/join"
-@bot.hybrid_command(name="join", description="Unisciti alla partita")
+# Command to join the game
+@bot.hybrid_command(name="join", description="Join the game")
 async def join_game(ctx: commands.Context):
     if game_started:
         player = ctx.author
         if len(players) >= 6:
-            await send_message(ctx, f"{player.display_name} non può partecipare! Avete raggiunto il numero massimo di giocatori.")
+            await send_message(ctx, f"{player.display_name} cannot join! The maximum number of players has been reached.")
         elif round_index >= 0:
-            await send_message(ctx, f"{player.display_name} non può partecipare! Avete già chiuso le partecipazioni.")
+            await send_message(ctx, f"{player.display_name} cannot join! The game has already started.")
         elif player not in players:
             players.append(player)
-            #await send_message(ctx, f"{player.display_name} si è unito alla partita!")
-            await send_message(ctx, f"Benvenuto nel gioco, {player.display_name}! 🎉 Usa `/start` se siete al completo.")
-            print(f"{player.display_name} si è unito alla partita.")
+            await send_message(ctx, f"Welcome to the game, {player.display_name}! 🎉 Use `/start` when ready.")
+            print(f"{player.display_name} joined the game.")
         else:
-            await send_message(ctx, f"{player.display_name} è già nella partita!")
+            await send_message(ctx, f"{player.display_name} is already in the game!")
     else:
-        await send_message(ctx, "Nessuna partita attiva. Usa '/dixit' per iniziarne una.")
+        await send_message(ctx, "No active game. Use `/dixit` to start one.")
 
-# Comando per aggiungere l'AI al gioco: risposta a "!ai" o "/ai"
-@bot.hybrid_command(name="ai", description="Fai giocare anche l'AI")
+# Command to add AI to the game
+@bot.hybrid_command(name="ai", description="Add Turbo AI to the game")
 async def ai_game(ctx: commands.Context):
     global players
     if game_started:
-        if "AI" in players:  # Controlla se l'AI è già nel gioco
-            await send_message(ctx, "L'AI è già nella partita!")
+        if "AI" in players:  # Check if AI is already in the game
+            await send_message(ctx, "Turbo is already in the game!")
         elif len(players) >= 6:
-            await send_message(ctx, "AI non può partecipare! Avete raggiunto il numero massimo di giocatori.")
+            await send_message(ctx, "Turbo cannot join! The maximum number of players has been reached.")
         elif round_index >= 0:
-            await send_message(ctx, "AI non può partecipare! Avete già chiuso le partecipazioni.")
+            await send_message(ctx, "Turbo cannot join! The game has already started.")
         else:
-            players.append("AI")  # Aggiungi l'AI come giocatore
-            await send_message(ctx, "AI si è unito alla partita! 🤖")
+            players.append("AI")  # Add AI to the game
+            await send_message(ctx, "Turbo has joined the game! 🤖")
     else:
-        await send_message(ctx, "Nessuna partita attiva. Usa '/dixit' per iniziarne una.")
+        await send_message(ctx, "No active game. Use `/dixit` to start one.")
 
-
-# Comando per iniziare ufficialmente la partita: risposta a "/start"
-@bot.hybrid_command(name="start", description="Inizia ufficialmente la partita")
+# Command to officially start the game
+@bot.hybrid_command(name="start", description="Officially start the game")
 async def start_game(ctx: commands.Context):
     global game_started, round_index
     if not game_started:
-        await send_message(ctx, "Nessuna partita attiva. Usa '/dixit' per iniziarne una.")
-    elif len(players) < 1:
-        await send_message(ctx, "Servono almeno 3 giocatori per iniziare la partita.")
+        await send_message(ctx, "No active game. Use `/dixit` to start one.")
+    elif len(players) < 3:
+        await send_message(ctx, "At least 3 players are needed to start the game.")
     else:
         round_index = round_index+1
-        await round(ctx)  # Chiama la funzione per gestire il turno
+        await round(ctx)
 
-# Comando per terminare forzatamente la partita
-@bot.hybrid_command(name="endgame", description="Termina la partita attuale")
+# Command to forcibly end the game
+@bot.hybrid_command(name="endgame", description="End the current game")
 async def end_game(ctx: commands.Context):
     global game_started, round_index, storyteller_card, storyteller, hands, played_cards, played_cards_by_players, storyteller_chose, votes, deck, ai_hint, ai_cards
     player = ctx.author
     if not game_started:
-        await send_message(ctx, f"Non c'è nessuna partita da interrompere.")
+        await send_message(ctx, f"There is no game to end.")
     else:
-        await send_message(ctx, f"Partita interrotta da {player.display_name}.")
+        await send_message(ctx, f"The game was ended by {player.display_name}.")
         game_started = False  # La partita è finita, non è più attiva
         round_index = -1
         storyteller_card = None
@@ -488,6 +462,5 @@ async def end_game(ctx: commands.Context):
 
 
 
-# Avvia il bot con il token
 bot.run('TOKEN')
 
